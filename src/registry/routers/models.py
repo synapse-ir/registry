@@ -13,7 +13,6 @@ GET    /v1/models/:model_id/heartbeat    public (proxy)
 import uuid
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +21,7 @@ from registry.db.database import get_db
 from registry.middleware.auth import require_scope, require_token
 from registry.models.auth import AuthTokenORM
 from registry.models.manifest import ManifestCreate, ManifestORM, ManifestResponse, ManifestUpdate, hash_token
+from registry.services.heartbeat_svc import heartbeat_service
 
 router = APIRouter(prefix="/v1/models", tags=["models"])
 
@@ -74,6 +74,8 @@ async def register_model(
     db.add(row)
     await db.commit()
     await db.refresh(row)
+    if not row.is_deprecated:
+        heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
     return ManifestResponse.model_validate(row)
 
 
@@ -103,6 +105,12 @@ async def update_model(
     row.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(row)
+
+    if row.is_deprecated:
+        heartbeat_service.unregister_model(row.model_id)
+    else:
+        heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
+
     return ManifestResponse.model_validate(row)
 
 
@@ -116,6 +124,7 @@ async def deprecate_model(
     row.is_deprecated = True
     row.updated_at = datetime.now(timezone.utc)
     await db.commit()
+    heartbeat_service.unregister_model(row.model_id)
 
 
 @router.get("/{model_id}/adapters/{lang}")
@@ -129,14 +138,37 @@ async def get_adapter(model_id: str, lang: str, db: AsyncSession = Depends(get_d
 
 @router.get("/{model_id}/heartbeat")
 async def proxy_heartbeat(model_id: str, db: AsyncSession = Depends(get_db)) -> dict:
-    row = await _get_or_404(db, model_id)
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        try:
-            resp = await client.get(row.heartbeat_endpoint)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Heartbeat unreachable")
+    """
+    Returns the cached HeartbeatResponse for a model.
+
+    NEVER makes a live request on this path — all data comes from the
+    background polling cache (§8 C3). Returns 503 when the cache entry
+    is absent or the model is unreachable (≥3 consecutive poll failures).
+    """
+    await _get_or_404(db, model_id)   # 404 if model unknown
+
+    cached = heartbeat_service.get_cached(model_id)
+    routing_st = heartbeat_service.routing_status(model_id)
+
+    if cached is None or routing_st == "unavailable":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "model_id": model_id,
+                "status": routing_st,
+                "consecutive_failures": cached.meta.consecutive_failures if cached else 0,
+                "last_error": cached.meta.last_error if cached else None,
+            },
+        )
+
+    return {
+        "model_id": model_id,
+        "status": routing_st,
+        "cached_at": cached.meta.fetched_at,
+        "is_stale": cached.meta.is_stale,
+        "consecutive_failures": cached.meta.consecutive_failures,
+        "heartbeat": cached.response,
+    }
 
 
 # ---------------------------------------------------------------------------

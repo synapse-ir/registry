@@ -9,11 +9,17 @@ models_unlocked descending (G-C04).
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from registry.models.manifest import ManifestORM
+
+if TYPE_CHECKING:
+    from registry.services.heartbeat_svc import HeartbeatService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -70,6 +76,7 @@ class RouteScorer:
         quality_floor: float | None = None,
         exclude_models: list[str] | None = None,
         limit: int = 5,
+        heartbeat_service: "HeartbeatService | None" = None,
     ) -> RouteResult:
         now = int(time.time())
         exclude = set(exclude_models or [])
@@ -79,6 +86,19 @@ class RouteScorer:
         for model in models:
             if model.model_id in exclude or model.is_deprecated:
                 continue
+
+            # §8 C3: filter by heartbeat cache status before capability checks
+            if heartbeat_service is not None:
+                hb_status = heartbeat_service.routing_status(model.model_id)
+                if hb_status == "unavailable":
+                    filtered_out.append(FilteredOut(
+                        model_id=model.model_id,
+                        reason="heartbeat_unavailable",
+                        detail="model heartbeat is unavailable or has consecutive failures",
+                    ))
+                    continue
+                if hb_status == "degraded":
+                    logger.warning("Routing with degraded heartbeat: %s", model.model_id)
 
             if task_type not in (model.task_types or []):
                 filtered_out.append(FilteredOut(
@@ -137,7 +157,11 @@ class RouteScorer:
 
             # domain_perf defaults to 0.8; updated by Calibration Layer when available
             domain_perf = 0.8
-            capacity = min(1.0, max_throughput / 200.0)
+            # Capacity from heartbeat cache; perf_profile max_throughput as fallback
+            if heartbeat_service is not None:
+                capacity = heartbeat_service.get_capacity_pct(model.model_id)
+            else:
+                capacity = min(1.0, max_throughput / 200.0)
             composite = round(domain_perf * 0.55 + capacity * 0.30 + latency_fit * 0.15, 4)
 
             candidates.append(CandidateResult(

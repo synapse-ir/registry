@@ -9,13 +9,31 @@ from registry.db.database import get_db, init_db
 from registry.middleware.rate_limit import RateLimitMiddleware
 from registry.models.manifest import ManifestORM
 from registry.routers import auth, models
-from registry.routers import routing
+from registry.routers import calibration, routing
+from registry.services.calibration_svc import calibration_buffer
+from registry.services.heartbeat_svc import heartbeat_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Seed heartbeat cache with all active models before starting the polling thread
+    from registry.db.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(ManifestORM).where(ManifestORM.is_deprecated == False)  # noqa: E712
+        )
+        for row in result.scalars().all():
+            heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
+
+    heartbeat_service.start()
+    await calibration_buffer.start()
+
     yield
+
+    await calibration_buffer.stop()
+    heartbeat_service.stop()
 
 
 app = FastAPI(
@@ -37,6 +55,7 @@ app.add_middleware(RateLimitMiddleware)
 app.include_router(auth.router)
 app.include_router(models.router)
 app.include_router(routing.router)
+app.include_router(calibration.router)
 
 
 @app.get("/healthz", tags=["ops"])

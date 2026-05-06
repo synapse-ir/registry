@@ -1,0 +1,20 @@
+services:
+  registry:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./synapse.db:/app/synapse.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

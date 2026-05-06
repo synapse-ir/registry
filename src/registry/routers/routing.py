@@ -23,6 +23,7 @@ from registry.db.database import get_db
 from registry.middleware.auth import require_token
 from registry.models.auth import AuthTokenORM
 from registry.models.manifest import ManifestORM
+from registry.services.heartbeat_svc import heartbeat_service
 from registry.services.routing_svc import RelaxationSuggestion, RouteScorer
 
 router = APIRouter(prefix="/v1", tags=["routing"])
@@ -62,6 +63,7 @@ async def route(
         quality_floor=body.quality_floor,
         exclude_models=body.exclude_models,
         limit=body.limit,
+        heartbeat_service=heartbeat_service,
     )
 
     filtered_out_full = [
