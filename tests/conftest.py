@@ -7,6 +7,7 @@ fully isolated even when run in parallel.
 
 import asyncio
 import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -64,3 +65,26 @@ async def client(db_engine):
     app.dependency_overrides.clear()
     auth_cache._cache.clear()
     rl_cache._windows.clear()
+
+
+def _make_pypi_mock(status_code: int = 200, sha256: str = "a" * 64) -> MagicMock:
+    """Return a mock httpx.AsyncClient class that simulates a PyPI JSON API response."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    mock_resp.json.return_value = {
+        "urls": [{"packagetype": "sdist", "digests": {"sha256": sha256}}]
+    }
+
+    mock_instance = AsyncMock()
+    mock_instance.get = AsyncMock(return_value=mock_resp)
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    return MagicMock(return_value=mock_instance)
+
+
+@pytest.fixture(autouse=True)
+def _default_pypi_mock():
+    """Prevent real PyPI network calls in every test; override per-test as needed."""
+    with patch("registry.routers.models.httpx.AsyncClient", _make_pypi_mock()):
+        yield

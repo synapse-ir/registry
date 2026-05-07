@@ -41,6 +41,11 @@ class ManifestORM(Base):
     # Adapters — stored as JSON
     adapters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
+    # Supply chain security — Phase 1 (§9 G-S08)
+    pypi_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Phase 2 adapter signing — reserved, populated when signing ships
+    adapter_signature: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
     # Operational metadata
     heartbeat_endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
     contact_email: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -81,6 +86,7 @@ class PythonAdapter(BaseModel):
     package: str
     version: str
     class_: str | None = None
+    pypi_hash: str | None = None  # Populated by registry at registration (§9 G-S08)
 
     model_config = ConfigDict(populate_by_name=True)
 

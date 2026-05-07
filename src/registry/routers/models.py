@@ -13,6 +13,7 @@ GET    /v1/models/:model_id/heartbeat    public (proxy)
 import uuid
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,11 +66,19 @@ async def register_model(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="model_id already registered")
 
+    pypi_hash: str | None = None
+    if body.adapters.python:
+        pypi_hash = await _verify_pypi_package(
+            body.adapters.python.package,
+            body.adapters.python.version,
+        )
+
     row = ManifestORM(
         id=str(uuid.uuid4()),
         owner_hash=token.token_hash,
         is_deprecated=body.deprecated,
-        **_manifest_fields(body),
+        pypi_hash=pypi_hash,
+        **_manifest_fields(body, pypi_hash=pypi_hash),
     )
     db.add(row)
     await db.commit()
@@ -183,7 +192,43 @@ async def _get_or_404(db: AsyncSession, model_id: str) -> ManifestORM:
     return row
 
 
-def _manifest_fields(body: ManifestCreate) -> dict:
+async def _verify_pypi_package(package: str, version: str) -> str:
+    """Verify a package exists on PyPI and return the SHA-256 hash of its sdist tarball."""
+    url = f"https://pypi.org/pypi/{package}/{version}/json"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(url)
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "REG_ADAPTER_MISSING",
+                "message": f"Python adapter '{package}=={version}' not found on PyPI",
+            },
+        )
+
+    urls = resp.json().get("urls", [])
+    # Prefer sdist, fall back to any artifact
+    sdist = next((u for u in urls if u.get("packagetype") == "sdist"), None)
+    artifact = sdist or (urls[0] if urls else None)
+    if artifact:
+        sha256 = artifact.get("digests", {}).get("sha256", "")
+        if sha256:
+            return sha256
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail={
+            "code": "REG_ADAPTER_MISSING",
+            "message": f"Python adapter '{package}=={version}' has no release artifacts on PyPI",
+        },
+    )
+
+
+def _manifest_fields(body: ManifestCreate, pypi_hash: str | None = None) -> dict:
+    adapters_dict = body.adapters.model_dump(exclude_none=True)
+    if pypi_hash and "python" in adapters_dict:
+        adapters_dict["python"]["pypi_hash"] = pypi_hash
     return {
         "manifest_version": body.manifest_version,
         "model_id": body.model_id,
@@ -197,7 +242,7 @@ def _manifest_fields(body: ManifestCreate) -> dict:
         "perf_profile": body.perf_profile.model_dump(),
         "compliance_tags": body.compliance_tags,
         "data_residency": body.data_residency,
-        "adapters": body.adapters.model_dump(exclude_none=True),
+        "adapters": adapters_dict,
         "heartbeat_endpoint": body.heartbeat_endpoint,
         "contact_email": body.contact_email,
         "license": body.license,

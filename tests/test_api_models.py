@@ -9,8 +9,24 @@ DELETE /v1/models/:model_id
 GET    /v1/models/:model_id/adapters/:lang
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from httpx import AsyncClient
+
+
+def _make_pypi_mock(status_code: int = 200, sha256: str = "a" * 64) -> MagicMock:
+    """Return a mock httpx.AsyncClient class simulating a PyPI JSON API response."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    mock_resp.json.return_value = {
+        "urls": [{"packagetype": "sdist", "digests": {"sha256": sha256}}]
+    }
+    mock_instance = AsyncMock()
+    mock_instance.get = AsyncMock(return_value=mock_resp)
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+    return MagicMock(return_value=mock_instance)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -325,3 +341,115 @@ async def test_get_adapter_missing_lang(client: AsyncClient):
 
     r = await client.get("/v1/models/test-model-v1/adapters/ruby")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PyPI supply-chain verification — §9 G-S08
+# ---------------------------------------------------------------------------
+
+_PYPI_SHA256 = "b" * 64
+
+
+@pytest.mark.asyncio
+async def test_register_stores_pypi_hash_in_adapters(client: AsyncClient):
+    """Successful registration: pypi_hash appears at adapters.python.pypi_hash."""
+    token = await _issue_token(client)
+
+    with patch(
+        "registry.routers.models.httpx.AsyncClient",
+        _make_pypi_mock(sha256=_PYPI_SHA256),
+    ):
+        r = await client.post(
+            "/v1/models",
+            json=_MANIFEST,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert r.status_code == 201
+    data = r.json()
+    assert data["adapters"]["python"]["pypi_hash"] == _PYPI_SHA256
+
+
+@pytest.mark.asyncio
+async def test_register_pypi_hash_persisted_on_adapter_endpoint(client: AsyncClient):
+    """Hash is readable via the per-language adapter endpoint after registration."""
+    token = await _issue_token(client)
+
+    with patch(
+        "registry.routers.models.httpx.AsyncClient",
+        _make_pypi_mock(sha256=_PYPI_SHA256),
+    ):
+        await _register(client, token)
+
+    r = await client.get("/v1/models/test-model-v1/adapters/python")
+    assert r.status_code == 200
+    assert r.json()["pypi_hash"] == _PYPI_SHA256
+
+
+@pytest.mark.asyncio
+async def test_register_pypi_missing_returns_reg_adapter_missing(client: AsyncClient):
+    """PyPI 404 → HTTP 422 with code REG_ADAPTER_MISSING."""
+    token = await _issue_token(client)
+
+    with patch(
+        "registry.routers.models.httpx.AsyncClient",
+        _make_pypi_mock(status_code=404),
+    ):
+        r = await client.post(
+            "/v1/models",
+            json=_MANIFEST,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert detail["code"] == "REG_ADAPTER_MISSING"
+    assert "synapse-test-adapter" in detail["message"]
+    assert "1.0.0" in detail["message"]
+
+
+@pytest.mark.asyncio
+async def test_register_pypi_missing_does_not_persist(client: AsyncClient):
+    """A failed PyPI check must not create a manifest record."""
+    token = await _issue_token(client)
+
+    with patch(
+        "registry.routers.models.httpx.AsyncClient",
+        _make_pypi_mock(status_code=404),
+    ):
+        await client.post(
+            "/v1/models",
+            json=_MANIFEST,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    r = await client.get("/v1/models/test-model-v1")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_register_no_python_adapter_skips_pypi(client: AsyncClient):
+    """Manifests without a python adapter must not call PyPI."""
+    token = await _issue_token(client)
+    manifest_ts_only = {
+        **_MANIFEST,
+        "model_id": "ts-only-model",
+        "adapters": {
+            "typescript": {"package": "@synapse/ts-adapter", "version": "1.0.0"},
+        },
+    }
+
+    called = []
+
+    async def _should_not_be_called(*_a, **_kw):
+        called.append(True)
+
+    with patch("registry.routers.models._verify_pypi_package", _should_not_be_called):
+        r = await client.post(
+            "/v1/models",
+            json=manifest_ts_only,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert r.status_code == 201
+    assert called == [], "PyPI verification must not run when no python adapter is present"
