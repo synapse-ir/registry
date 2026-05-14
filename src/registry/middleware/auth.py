@@ -54,10 +54,10 @@ async def _lookup(db: AsyncSession, token_hash: str) -> AuthTokenORM | None:
             record = None
         elif record.expires_at is not None:
             # SQLite returns naive datetimes; treat as UTC for comparison
-            exp = record.expires_at
-            if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
-            if exp < datetime.now(timezone.utc):
+            token_exp = record.expires_at
+            if token_exp.tzinfo is None:
+                token_exp = token_exp.replace(tzinfo=timezone.utc)
+            if token_exp < datetime.now(timezone.utc):
                 record = None
 
     _cache[token_hash] = (record, now + CACHE_TTL)
