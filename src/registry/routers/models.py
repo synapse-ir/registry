@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from registry.db.database import get_db
 from registry.middleware.auth import require_scope, require_token
 from registry.models.auth import AuthTokenORM
-from registry.models.manifest import ManifestCreate, ManifestORM, ManifestResponse, ManifestUpdate, hash_token
+from registry.models.manifest import ManifestCreate, ManifestORM, ManifestResponse, ManifestUpdate
 from registry.services.heartbeat_svc import heartbeat_service
 
 router = APIRouter(prefix="/v1/models", tags=["models"])

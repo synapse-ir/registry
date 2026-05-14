@@ -8,9 +8,7 @@ zero-candidate structure including relaxation_suggestions.
 
 from __future__ import annotations
 
-import time
 import uuid
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends
