@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
