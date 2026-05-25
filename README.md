@@ -10,8 +10,10 @@ A public hosted registry is live and available now:
 
 **`https://registry-production-4b29.up.railway.app`**
 
+- Homepage: https://registry-production-4b29.up.railway.app
 - API docs: https://registry-production-4b29.up.railway.app/docs
 - Health: https://registry-production-4b29.up.railway.app/healthz
+- Project site: https://synapse-ir.github.io
 
 No setup required — point your adapter SDK at the hosted endpoint to register models and query the routing engine immediately.
 
@@ -88,8 +90,8 @@ Register adapter metadata — the package, capabilities, compliance tags, and pe
 ```json
 {
   "model_id": "org/model-name",
-  ...
-  // omit heartbeat_endpoint entirely
+  "task_types": ["classify"],
+  "domains": ["general"]
 }
 ```
 
@@ -99,7 +101,8 @@ Register a deployed adapter that has a live HTTP endpoint returning a heartbeat 
 ```json
 {
   "model_id": "org/model-name",
-  ...
+  "task_types": ["classify"],
+  "domains": ["general"],
   "heartbeat_endpoint": "https://your-adapter-host/healthz"
 }
 ```
@@ -109,11 +112,24 @@ The heartbeat endpoint must return JSON (any valid JSON object is accepted). A t
 {"status": "ok", "capacity_pct": 0.85}
 ```
 
+## Validating before you register
+
+Use the adapter SDK's `--check-registry` flag to confirm your `MODEL_ID` is
+available before submitting a manifest:
+
+```bash
+synapse-validate --adapter my_module.MyAdapter --check-registry
+```
+
+This validates your adapter locally and then queries the live registry in one
+step — no curl required.
+
 ## Documentation
 
+- [Project homepage](https://synapse-ir.github.io)
 - [Canonical IR specification](https://github.com/synapse-ir/spec)
 - [Adapter SDK (Python)](https://github.com/synapse-ir/adapter-sdk)
-- [Adapter SDK (TypeScript)](https://github.com/synapse-ir/adapter-sdk-ts)
+- [Adapter SDK docs](https://synapse-ir.github.io/adapter-sdk/)
 - [Community adapters](https://github.com/synapse-ir/adapters)
 
 ## License
