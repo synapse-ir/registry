@@ -14,14 +14,183 @@ from registry.routers import calibration, routing
 from registry.services.calibration_svc import calibration_buffer
 from registry.services.heartbeat_svc import heartbeat_service
 
+# ---------------------------------------------------------------------------
+# Catalog seed — 14 community adapter entries auto-inserted on startup
+# (catalog mode: no heartbeat_endpoint, treated as always-available)
+# ---------------------------------------------------------------------------
+_CATALOG_SEED = [
+    {"model_id": "openai/gpt-4o-mini", "display_name": "GPT-4o Mini",
+     "model_version": "gpt-4o-mini-2024-07-18",
+     "description": "OpenAI GPT-4o Mini for text classification and extraction via SYNAPSE canonical IR",
+     "task_types": ["classify", "extract"], "domains": ["general", "legal", "finance"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 180, "p95_latency_ms": 400, "max_throughput_rps": 50, "cost_per_1k_tokens": 0.00015},
+     "compliance_tags": ["gdpr-eu", "ccpa"], "data_residency": ["us", "eu"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "sentence-transformers/all-MiniLM-L6-v2", "display_name": "all-MiniLM-L6-v2 Embeddings",
+     "model_version": "1.0.0", "description": "Sentence embeddings via SYNAPSE canonical IR",
+     "task_types": ["embed"], "domains": ["general", "semantic-search"],
+     "input_modalities": ["text"], "output_modalities": ["embedding"],
+     "perf_profile": {"p50_latency_ms": 20, "p95_latency_ms": 60, "max_throughput_rps": 200, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
+    {"model_id": "facebook/bart-large-cnn", "display_name": "BART Large CNN Summarizer",
+     "model_version": "1.0.0", "description": "Abstractive summarization via SYNAPSE canonical IR",
+     "task_types": ["summarize"], "domains": ["general", "legal", "news"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 800, "p95_latency_ms": 2000, "max_throughput_rps": 5, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "medicalai/ClinicalBERT", "display_name": "ClinicalBERT",
+     "model_version": "1.0.0", "description": "Clinical NLP for medical entity extraction via SYNAPSE canonical IR",
+     "task_types": ["classify", "extract"], "domains": ["medical", "clinical"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 120, "p95_latency_ms": 300, "max_throughput_rps": 20, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["hipaa"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "openai/clip-vit-base-patch32", "display_name": "CLIP ViT-B/32",
+     "model_version": "1.0.0", "description": "Multimodal image-text embeddings via SYNAPSE canonical IR",
+     "task_types": ["embed", "classify"], "domains": ["general", "vision"],
+     "input_modalities": ["text", "image"], "output_modalities": ["embedding"],
+     "perf_profile": {"p50_latency_ms": 50, "p95_latency_ms": 150, "max_throughput_rps": 50, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "docling-project/docling", "display_name": "Docling Document Parser",
+     "model_version": "1.0.0", "description": "Document parsing and extraction via SYNAPSE canonical IR",
+     "task_types": ["extract", "classify"], "domains": ["general", "legal", "finance"],
+     "input_modalities": ["text", "document"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 500, "p95_latency_ms": 2000, "max_throughput_rps": 10, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us", "eu"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "facebook/bart-large-mnli", "display_name": "BART Large MNLI (Zero-Shot)",
+     "model_version": "1.0.0", "description": "Zero-shot text classification via SYNAPSE canonical IR",
+     "task_types": ["classify"], "domains": ["general", "legal", "finance"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 600, "p95_latency_ms": 1500, "max_throughput_rps": 8, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "ProsusAI/finbert", "display_name": "FinBERT Financial Sentiment",
+     "model_version": "1.0.0", "description": "Financial sentiment analysis via SYNAPSE canonical IR",
+     "task_types": ["classify"], "domains": ["finance"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 80, "p95_latency_ms": 200, "max_throughput_rps": 40, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
+    {"model_id": "cross-encoder/ms-marco-MiniLM-L6-v2", "display_name": "MS MARCO Cross-Encoder Re-ranker",
+     "model_version": "1.0.0", "description": "Passage re-ranking for search via SYNAPSE canonical IR",
+     "task_types": ["rerank"], "domains": ["general", "semantic-search"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 30, "p95_latency_ms": 80, "max_throughput_rps": 100, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
+    {"model_id": "dslim/bert-base-NER", "display_name": "BERT Base NER",
+     "model_version": "1.0.0", "description": "Named entity recognition via SYNAPSE canonical IR",
+     "task_types": ["extract"], "domains": ["general", "legal"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 60, "p95_latency_ms": 150, "max_throughput_rps": 50, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
+    {"model_id": "johnsnowlabs/ner_clinical", "display_name": "John Snow Labs Clinical NER",
+     "model_version": "1.0.0", "description": "Clinical named entity recognition via SYNAPSE canonical IR",
+     "task_types": ["extract"], "domains": ["medical", "clinical"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 150, "p95_latency_ms": 400, "max_throughput_rps": 15, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["hipaa"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
+    {"model_id": "Helsinki-NLP/opus-mt-en-fr", "display_name": "Helsinki NLP EN→FR Translation",
+     "model_version": "1.0.0", "description": "English to French machine translation via SYNAPSE canonical IR",
+     "task_types": ["translate"], "domains": ["general"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 200, "p95_latency_ms": 500, "max_throughput_rps": 20, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["eu"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
+    {"model_id": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+     "display_name": "Twitter RoBERTa Sentiment",
+     "model_version": "1.0.0", "description": "Social media sentiment analysis via SYNAPSE canonical IR",
+     "task_types": ["classify"], "domains": ["general", "social"],
+     "input_modalities": ["text"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 80, "p95_latency_ms": 200, "max_throughput_rps": 40, "cost_per_1k_tokens": 0.0},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+    {"model_id": "openai/whisper-large-v3", "display_name": "Whisper Large v3",
+     "model_version": "large-v3", "description": "Multilingual speech-to-text via SYNAPSE canonical IR",
+     "task_types": ["transcribe"], "domains": ["general", "media"],
+     "input_modalities": ["audio"], "output_modalities": ["text"],
+     "perf_profile": {"p50_latency_ms": 2000, "p95_latency_ms": 5000, "max_throughput_rps": 2, "cost_per_1k_tokens": 0.006},
+     "compliance_tags": ["gdpr-eu"], "data_residency": ["us"],
+     "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
+     "contact_email": "tfagent1111@gmail.com", "license": "MIT"},
+]
+
+
+async def _seed_catalog(session: AsyncSession) -> None:
+    """Insert catalog models that are not yet in the database.
+
+    Idempotent — skips models that already exist. Runs inside lifespan so
+    every fresh deployment (SQLite or PostgreSQL) starts with a populated
+    catalog without requiring a manual re-registration step.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    existing = {
+        row.model_id
+        for row in (await session.execute(select(ManifestORM))).scalars().all()
+    }
+
+    for entry in _CATALOG_SEED:
+        if entry["model_id"] in existing:
+            continue
+        row = ManifestORM(
+            id=_uuid.uuid4(),
+            manifest_version="1.0.0",
+            model_id=entry["model_id"],
+            display_name=entry["display_name"],
+            model_version=entry["model_version"],
+            description=entry["description"],
+            task_types=entry["task_types"],
+            domains=entry["domains"],
+            input_modalities=entry["input_modalities"],
+            output_modalities=entry["output_modalities"],
+            perf_profile=entry["perf_profile"],
+            compliance_tags=entry.get("compliance_tags", []),
+            data_residency=entry.get("data_residency", []),
+            adapters=entry.get("adapters", {}),
+            heartbeat_endpoint=None,
+            contact_email=entry.get("contact_email"),
+            license=entry.get("license", "MIT"),
+            is_deprecated=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(row)
+
+    await session.commit()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
 
-    # Seed heartbeat cache with all active models before starting the polling thread
     from registry.db.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
+        # Seed catalog models on every startup (idempotent)
+        await _seed_catalog(session)
+
+        # Seed heartbeat cache with all active models
         result = await session.execute(
             select(ManifestORM).where(ManifestORM.is_deprecated == False)  # noqa: E712
         )
@@ -127,10 +296,10 @@ _LANDING_HTML = """<!DOCTYPE html>
 
   <div class="links">
     <a class="btn primary" href="/docs">API docs</a>
+    <a class="btn" href="https://synapse-ir.github.io">Project site</a>
     <a class="btn" href="https://github.com/synapse-ir/registry">Registry</a>
     <a class="btn" href="https://github.com/synapse-ir/adapter-sdk">Adapter SDK</a>
     <a class="btn" href="https://github.com/synapse-ir/spec">Spec</a>
-    <a class="btn" href="https://synapse-ir.github.io/adapter-sdk/">Documentation</a>
   </div>
 
   <div class="section-title">Quick start</div>
@@ -149,11 +318,11 @@ _LANDING_HTML = """<!DOCTYPE html>
     <span class="cmd">def</span> egress(self, output: dict, ir: CanonicalIR, latency_ms: int) -> CanonicalIR:
         <span class="cmd">return</span> self.build_response(ir, output[<span class="string">"result"</span>], latency_ms)
 
-<span class="comment"># Validate before registering</span>
+<span class="comment"># Validate and check registry in one step</span>
 <span class="cmd">synapse-validate --adapter</span> my_module.MyModelAdapter <span class="cmd">--check-registry</span></div>
 
   <footer>
-    <a href="https://github.com/synapse-ir">GitHub</a>
+    <a href="https://synapse-ir.github.io">Project site</a>
     <a href="/docs">API Reference</a>
     <a href="https://github.com/synapse-ir/spec">Specification</a>
     <a href="https://github.com/synapse-ir/adapter-sdk/blob/main/SECURITY.md">Security</a>
