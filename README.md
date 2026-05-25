@@ -78,6 +78,37 @@ curl -X GET http://localhost:8000/v1/route \
 - Heartbeat-based model availability monitoring
 - Exponential-decay calibration for routing weight updates
 
+## Registration modes
+
+The registry supports two registration modes depending on whether the model has a live deployed endpoint:
+
+**Catalog entry** (no `heartbeat_endpoint`)
+Register adapter metadata — the package, capabilities, compliance tags, and performance profile — without a live inference endpoint. The routing engine treats catalog entries as available and uses declared `perf_profile` for scoring. Use this for community adapters, reference implementations, and models you want discoverable before deploying.
+
+```json
+{
+  "model_id": "org/model-name",
+  ...
+  // omit heartbeat_endpoint entirely
+}
+```
+
+**Live service** (with `heartbeat_endpoint`)
+Register a deployed adapter that has a live HTTP endpoint returning a heartbeat JSON payload. The registry polls the endpoint every 30 seconds, marks the model degraded after 30 s staleness and unavailable after 90 s or 3 consecutive failures. Only live services participate in real-time availability routing.
+
+```json
+{
+  "model_id": "org/model-name",
+  ...
+  "heartbeat_endpoint": "https://your-adapter-host/healthz"
+}
+```
+
+The heartbeat endpoint must return JSON (any valid JSON object is accepted). A typical response:
+```json
+{"status": "ok", "capacity_pct": 0.85}
+```
+
 ## Documentation
 
 - [Canonical IR specification](https://github.com/synapse-ir/spec)
