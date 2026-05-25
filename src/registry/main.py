@@ -26,7 +26,8 @@ async def lifespan(app: FastAPI):
             select(ManifestORM).where(ManifestORM.is_deprecated == False)  # noqa: E712
         )
         for row in result.scalars().all():
-            heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
+            if row.heartbeat_endpoint:
+                heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
 
     heartbeat_service.start()
     await calibration_buffer.start()
