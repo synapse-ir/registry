@@ -185,7 +185,21 @@ async def proxy_heartbeat(model_id: str, db: AsyncSession = Depends(get_db)) -> 
 # ---------------------------------------------------------------------------
 
 async def _get_or_404(db: AsyncSession, model_id: str) -> ManifestORM:
-    result = await db.execute(select(ManifestORM).where(ManifestORM.model_id == model_id))
+    """Lookup by model_id string, or by UUID for slash-containing model IDs.
+
+    Model IDs that follow the ``org/name`` convention (e.g. ``openai/gpt-4o-mini``)
+    cannot be embedded in a URL path segment without ambiguity.  Callers may
+    pass the UUID returned at registration time instead; this helper detects
+    the UUID format and performs the appropriate lookup.
+    """
+    import re
+    _UUID_RE = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+    )
+    if _UUID_RE.match(model_id):
+        result = await db.execute(select(ManifestORM).where(ManifestORM.id == model_id))
+    else:
+        result = await db.execute(select(ManifestORM).where(ManifestORM.model_id == model_id))
     row = result.scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
