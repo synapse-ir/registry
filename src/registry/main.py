@@ -1,3 +1,4 @@
+import hashlib
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -13,6 +14,10 @@ from registry.routers import auth, models
 from registry.routers import calibration, routing
 from registry.services.calibration_svc import calibration_buffer
 from registry.services.heartbeat_svc import heartbeat_service
+
+# Stable sentinel used as owner_hash for built-in catalog entries.
+# These models are owned by the registry itself — not by any user token.
+_CATALOG_OWNER_HASH = "dec5ef58104c3b8a25447f20e393c668c70133fdcb75732b0a67114666513f58"
 
 # ---------------------------------------------------------------------------
 # Catalog seed — 14 community adapter entries auto-inserted on startup
@@ -108,7 +113,7 @@ _CATALOG_SEED = [
      "compliance_tags": ["hipaa"], "data_residency": ["us"],
      "adapters": {"python": {"package": "synapse-adapter-sdk", "version": "0.1.1"}},
      "contact_email": "tfagent1111@gmail.com", "license": "Apache-2.0"},
-    {"model_id": "Helsinki-NLP/opus-mt-en-fr", "display_name": "Helsinki NLP EN→FR Translation",
+    {"model_id": "Helsinki-NLP/opus-mt-en-fr", "display_name": "Helsinki NLP EN->FR Translation",
      "model_version": "1.0.0", "description": "English to French machine translation via SYNAPSE canonical IR",
      "task_types": ["translate"], "domains": ["general"],
      "input_modalities": ["text"], "output_modalities": ["text"],
@@ -137,12 +142,7 @@ _CATALOG_SEED = [
 
 
 async def _seed_catalog(session: AsyncSession) -> None:
-    """Insert catalog models that are not yet in the database.
-
-    Idempotent — skips models that already exist. Runs inside lifespan so
-    every fresh deployment (SQLite or PostgreSQL) starts with a populated
-    catalog without requiring a manual re-registration step.
-    """
+    """Insert catalog models that are not yet in the database (idempotent)."""
     import uuid as _uuid
     from datetime import datetime, timezone
 
@@ -151,11 +151,12 @@ async def _seed_catalog(session: AsyncSession) -> None:
         for row in (await session.execute(select(ManifestORM))).scalars().all()
     }
 
+    added = 0
     for entry in _CATALOG_SEED:
         if entry["model_id"] in existing:
             continue
         row = ManifestORM(
-            id=_uuid.uuid4(),
+            id=str(_uuid.uuid4()),
             manifest_version="1.0.0",
             model_id=entry["model_id"],
             display_name=entry["display_name"],
@@ -170,15 +171,18 @@ async def _seed_catalog(session: AsyncSession) -> None:
             data_residency=entry.get("data_residency", []),
             adapters=entry.get("adapters", {}),
             heartbeat_endpoint=None,
-            contact_email=entry.get("contact_email"),
+            contact_email=entry.get("contact_email", ""),
             license=entry.get("license", "MIT"),
+            owner_hash=_CATALOG_OWNER_HASH,
             is_deprecated=False,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
         session.add(row)
+        added += 1
 
-    await session.commit()
+    if added:
+        await session.commit()
 
 
 @asynccontextmanager
@@ -187,7 +191,7 @@ async def lifespan(app: FastAPI):
 
     from registry.db.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
-        # Seed catalog models on every startup (idempotent)
+        # Seed catalog models on every startup (idempotent — skips existing)
         await _seed_catalog(session)
 
         # Seed heartbeat cache with all active models
@@ -273,27 +277,24 @@ _LANDING_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="container">
-  <div class="badge">● live</div>
+  <div class="badge">&#9679; live</div>
   <h1>SYNAPSE <span>Registry</span></h1>
   <p class="tagline">
     Canonical IR protocol for AI model interoperability.
-    Write two functions — connect your model to every other model in the ecosystem.
+    Write two functions &mdash; connect your model to every other model in the ecosystem.
   </p>
-
   <div class="equation">
-<span class="comment"># Without SYNAPSE: N models need N×(N-1)/2 custom connectors</span>
+<span class="comment"># Without SYNAPSE: N models need N&times;(N-1)/2 custom connectors</span>
 <span class="problem">connectors = N * (N - 1) / 2   # 10 models = 45 connectors, each breaks on schema change</span>
 
 <span class="comment"># With SYNAPSE: write ingress() + egress() once</span>
 <span class="solution">connectors = 2 * N             # 10 models = 20 adapters, all composable</span>
   </div>
-
-  <div class="stats" id="stats">
-    <div class="stat"><div class="value" id="stat-models">—</div><div class="label">registered models</div></div>
+  <div class="stats">
+    <div class="stat"><div class="value" id="stat-models">&#8212;</div><div class="label">registered models</div></div>
     <div class="stat"><div class="value">live</div><div class="label">routing engine</div></div>
     <div class="stat"><div class="value">MIT</div><div class="label">open source</div></div>
   </div>
-
   <div class="links">
     <a class="btn primary" href="/docs">API docs</a>
     <a class="btn" href="https://synapse-ir.github.io">Project site</a>
@@ -301,7 +302,6 @@ _LANDING_HTML = """<!DOCTYPE html>
     <a class="btn" href="https://github.com/synapse-ir/adapter-sdk">Adapter SDK</a>
     <a class="btn" href="https://github.com/synapse-ir/spec">Spec</a>
   </div>
-
   <div class="section-title">Quick start</div>
   <div class="snippet"><span class="cmd">pip install synapse-adapter-sdk</span>
 
@@ -312,26 +312,25 @@ _LANDING_HTML = """<!DOCTYPE html>
     MODEL_ID = <span class="string">"my-org/my-model-v1"</span>
     ADAPTER_VERSION = <span class="string">"1.0.0"</span>
 
-    <span class="cmd">def</span> ingress(self, ir: CanonicalIR) -> dict:
-        <span class="cmd">return</span> {<span class="string">"input"</span>: ir.payload.content}
+    <span class="cmd">def</span> ingress(self, ir: CanonicalIR) -&gt; dict:
+        <span class="cmd">return</span> {"input": ir.payload.content}
 
-    <span class="cmd">def</span> egress(self, output: dict, ir: CanonicalIR, latency_ms: int) -> CanonicalIR:
+    <span class="cmd">def</span> egress(self, output: dict, ir: CanonicalIR, latency_ms: int) -&gt; CanonicalIR:
         <span class="cmd">return</span> self.build_response(ir, output[<span class="string">"result"</span>], latency_ms)
 
 <span class="comment"># Validate and check registry in one step</span>
 <span class="cmd">synapse-validate --adapter</span> my_module.MyModelAdapter <span class="cmd">--check-registry</span></div>
-
   <footer>
     <a href="https://synapse-ir.github.io">Project site</a>
     <a href="/docs">API Reference</a>
     <a href="https://github.com/synapse-ir/spec">Specification</a>
     <a href="https://github.com/synapse-ir/adapter-sdk/blob/main/SECURITY.md">Security</a>
-    <span>MIT License &nbsp;·&nbsp; Built with FastAPI</span>
+    <span>MIT License &nbsp;&middot;&nbsp; Built with FastAPI</span>
   </footer>
 </div>
 <script>
   fetch('/metrics').then(r => r.json()).then(d => {
-    document.getElementById('stat-models').textContent = d.models_active ?? '—';
+    document.getElementById('stat-models').textContent = d.models_active ?? '\u2014';
   }).catch(() => {});
 </script>
 </body>
