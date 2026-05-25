@@ -83,7 +83,7 @@ async def register_model(
     db.add(row)
     await db.commit()
     await db.refresh(row)
-    if not row.is_deprecated:
+    if not row.is_deprecated and row.heartbeat_endpoint:
         heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
     return ManifestResponse.model_validate(row)
 
@@ -117,8 +117,11 @@ async def update_model(
 
     if row.is_deprecated:
         heartbeat_service.unregister_model(row.model_id)
-    else:
+    elif row.heartbeat_endpoint:
         heartbeat_service.register_model(row.model_id, row.heartbeat_endpoint)
+    else:
+        # No heartbeat endpoint — unregister so the model is treated as catalog-available
+        heartbeat_service.unregister_model(row.model_id)
 
     return ManifestResponse.model_validate(row)
 
