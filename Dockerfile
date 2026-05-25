@@ -7,7 +7,8 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml .
 COPY src/ src/
 
-RUN uv pip install --system -e .
+# Install with postgres extras so asyncpg is available for production DATABASE_URL
+RUN uv pip install --system -e ".[postgres]"
 
 EXPOSE 8000
 
