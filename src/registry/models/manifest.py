@@ -47,7 +47,10 @@ class ManifestORM(Base):
     adapter_signature: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     # Operational metadata
-    heartbeat_endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
+    # heartbeat_endpoint is optional — omit for catalog/spec registrations that do not
+    # have a live deployed inference endpoint.  Provide it for live services so the
+    # registry can monitor availability and inform routing decisions.
+    heartbeat_endpoint: Mapped[str | None] = mapped_column(String(512), nullable=True)
     contact_email: Mapped[str] = mapped_column(String(256), nullable=False)
     license: Mapped[str] = mapped_column(String(64), nullable=False)
     successor_model_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -126,7 +129,10 @@ class ManifestCreate(BaseModel):
 
     adapters: AdapterRefs
 
-    heartbeat_endpoint: str
+    # Optional — omit for catalog/spec registrations without a live endpoint.
+    # Provide for deployed services; the registry will poll this URL to monitor
+    # availability and weight routing decisions accordingly.
+    heartbeat_endpoint: str | None = None
     contact_email: str
     license: str
     deprecated: bool = False
@@ -172,7 +178,7 @@ class ManifestResponse(BaseModel):
     data_residency: list[str]
     adapters: dict
 
-    heartbeat_endpoint: str
+    heartbeat_endpoint: str | None  # None for catalog entries without a live endpoint
     contact_email: str
     license: str
     is_deprecated: bool
